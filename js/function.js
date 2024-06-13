@@ -1,13 +1,7 @@
 const puppeteer = require('puppeteer');
 const log = require('./js/log.js');
 
-async function startTicketing(consertId, numberPerson, day, userId, pw) {
-    const browser = await puppeteer.launch({
-        headless: false,
-        args: ['--disable-web-security', '--disable-features=IsolateOrigins', ' --disable-site-isolation-trials']
-    });
-
-    let page = await browser.newPage();
+async function startTicketing(consertId, day, userId, pw, page) {
     await page.goto('https://ticket.interpark.com/Gate/TPLogin.asp');
     
     await page.setViewport({width: 1080, height: 1024});
@@ -29,129 +23,179 @@ async function startTicketing(consertId, numberPerson, day, userId, pw) {
     page.keyboard.press('Enter');
     await log.addLog("로그인 성공");
     
-    await page.waitForSelector('#DivMainPopup');
+    // 로그인 성공 후 페이지 로드 확인
+    await page.waitForNavigation();
+    await log.addLog("페이지 로드 완료");
 
     // save cookie
     const cookies = await page.cookies();
+    console.log('Cookies saved:', cookies);
+    await log.addLog("쿠키 저장 성공");
 
     // load cookie
     await page.setCookie(...cookies);
+    await log.addLog("쿠키 로드 성공");
 
-    // consert
-    let consertUrl = 'https://tickets.interpark.com/goods/' + consertId;
+    // 야구경기
+    let consertUrl = 'https://ticket.interpark.com/Contents/Sports/' + consertId;
+    console.log('Navigating to:', consertUrl);
     await page.goto(consertUrl);
+    await log.addLog("야구경기 페이지 이동");
     
-    // if exsited popup -> close
-    const popupCloseBut = '#popup-prdGuide > div > div.popupFooter > button'
-    const closeButElement = await page.$(popupCloseBut);
-    if(closeButElement != null) {
-        await page.click(popupCloseBut);
+    // 팝업 닫기
+    const popupSelector = '#div_checkDontsee_PT002_4_1';
+    const closeBtnSelector = 'button.btn.btnClose';
+
+    try {
+        await page.waitForSelector(popupSelector, { timeout: 5000 });
+        const closeButton = await page.$(closeBtnSelector);
+        if (closeButton) {
+            await closeButton.click();
+            await log.addLog("팝업 닫기 성공");
+        }
+    } catch (e) {
+        await log.addLog("팝업 없음 또는 닫기 실패");
     }
 
-    // 예매 오픈 시간까지 기다리기
-    // let startTime = new Date(2023, 3, 28, 11, 59, 59);
-    // let now = new Date();
-    // await new Promise(r => setTimeout(r, startTime.getTime() - now.getTime()));
-    // page.reload();
-
-    const ticketSelector = '.stickyWrap';
+    // 날짜 선택하기
+    const ticketSelector = '.timeScheduleList';
     await page.waitForSelector(ticketSelector);
-    
-    // 날짜
-    let mutedDayLength = (await page.$$('.muted')).length;
-    let dayCalculate = mutedDayLength + Number(day);
-    
-    const daySelector = '#productSide > div > div.sideMain > div.sideContainer.containerTop.sideToggleWrap > div.sideContent.toggleCalendar > div > div > div > div > ul:nth-child(3) > li:nth-child(' + `${dayCalculate}` + ')';
-    await page.waitForSelector(daySelector);
-    page.click(daySelector);
-    await log.addLog("공연 관람일 클릭");
+    await log.addLog("날짜 선택 리스트 로드 완료");
 
-    // 예매하기
-    // TODO : 티켓 오픈 예정 시간 입력 받아서 처리하는 로직
-    // let startTime = new Date(2023, 3, 28, 11, 59, 59);
-    // let now = new Date();
-    // await new Promise(r => setTimeout(r, startTime.getTime() - now.getTime()));
-    // await log.addLog("end wait");
+    // 날짜가 포함된 요소 선택
+    const days = await page.$$('.timeSchedule');
+    let targetDayElement = null;
 
-    const buttonSelector = '#productSide > div > div.sideBtnWrap > a.sideBtn.is-primary';
-    page.click(buttonSelector);
-    const newPagePromise = await new Promise(x => page.once('popup', x));
-    await log.addLog("예매하기 버튼 클릭 성공");
-    await page.setViewport({width: 1080, height: 1024});
-    page = await newPagePromise;
+    await log.addLog("날짜 요소 로드 완료, 총 " + days.length + "개의 날짜 요소 발견");
 
-    // 새창
-    await page.waitForSelector('#divBookSeat');
-    let iframeWindow = await page.$(
-        'iframe[id="ifrmSeat"]'
-    );
-    
-    frame = await iframeWindow.contentFrame();
+    for (let dayElement of days) {
+        const dateComponents = await dayElement.$$eval('.scheduleDate .num', elements => 
+            elements.map(el => el.classList.contains('dot') ? '-' : el.className.match(/num(\d)/)[1]).join('')
+        );
+        const dateText = dateComponents.split('-').join(''); // format: MMDD
+        const targetDateText = day.split('-').join(''); // 매개변수로 받은 day를 MMDD 형식으로 변경
 
-    // 잠깐 접어두기 클릭
-    await Promise.all([
-        await frame.waitForSelector('#divCaptchaFolding > a'),
-        await frame.click('#divCaptchaFolding > a'),
-    ]);
+        await log.addLog("날짜 비교: " + dateText + " vs " + targetDateText);
 
-    // 좌석 선택
-    await frame.waitForSelector('#ifrmSeatDetail');
-    iframeWindow = await frame.$(
-        'iframe[id="ifrmSeatDetail"]'
-    );
-    let datailFrame = await iframeWindow.contentFrame();
-    
-    // 직접 구역 누르고
-    // GetBlockSeatList('', '', '016');
-    // #TmgsTable > tbody > tr > td > map > area:nth-child(16)
-
-    // #divSeatBox 나오면 자동으로 좌석 클릭
-    await datailFrame.waitForSelector('#divSeatBox');
-    const seatArr = await datailFrame.$$('span[class="SeatN"]');
-    
-    for (let index = 0; index < numberPerson; index++) {
-        if(index+1 > seatArr.length) {
-            log.addErrorLog("잔여좌석 " + seatArr.length + "개로 " + numberPerson-seatArr.length + "개의 좌석은 잡지 못했습니다.");
+        if (dateText === targetDateText) {
+            targetDayElement = dayElement;
+            await log.addLog("해당 날짜 요소 발견: " + dateText);
             break;
         }
-        await seatArr[index].click();
-        await log.addLog("select seat");
     }
 
-    // 좌석 선택 완료 버튼 클릭
-    await frame.click('body > form:nth-child(2) > div > div.contWrap > div.seatR > div > div.btnWrap > a');
-    await log.addLog("좌석 선택 완료");
+    if (targetDayElement) {
+        const bookingButton = await targetDayElement.$('.btns .BtnColor_Y');
+        if (bookingButton) {
+            // 팝업 이벤트를 먼저 기다리도록 설정합니다.
+            const newPagePromise = new Promise(resolve => page.once('popup', target => resolve(target)));
+            await bookingButton.click();
+            await log.addLog('해당 날짜의 예매 버튼을 성공적으로 눌렀습니다.');
 
-    sleep(50000);
+            // 팝업 페이지가 열렸는지 확인
+            try {
+                const popupPage = await newPagePromise;
+                await log.addLog("팝업 페이지 열림");
 
-    // 사용자가 수기로 문자열 입력
+                // 팝업 페이지에서 올바른 프레임 찾기
+                const frameHandle = await popupPage.waitForSelector('#ifrmSeat');
+                const frame = await frameHandle.contentFrame();
 
-    
-    // await Promise.all([
-    //     frame.click(arr[0]),
-    //     frame.click(arr[1])
-    // ]);
-    
-    // frame.click(area의 title이 036영역);
+                // 구역 클릭
+                const seatSelector = 'a[sgn="1루 4층지정석(홈팀)"]';
+                await frame.waitForSelector(seatSelector);
+                await frame.click(seatSelector);
+                await log.addLog("지정석 선택완료.");
 
-    // 완료
+                // 구역 선택 버튼 클릭
+                const selectButtonSelector = '.twoBtn a:last-child';
+                await frame.waitForSelector(selectButtonSelector);
+                await frame.click(selectButtonSelector);
+                await log.addLog("좌석 선택 버튼 클릭 완료");
 
-    // 문자열 입력 -> 결제 알아서 완료하기
-    // const imgId = '#imgCaptcha';
-    // await frame.waitForSelector(imgId);
-    // let imgUrl = await frame.$eval(imgId, el => el.getAttribute('src'));
+                // 좌석 선택
+                const iframeDetailHandle = await frame.waitForSelector('#ifrmSeatDetail');
+                const detailFrame = await iframeDetailHandle.contentFrame();
+                const seat1 = 'img[title="[1루 4층지정석(홈팀)] 408구역 Q열-2"]';
+                const seat2 = 'img[title="[1루 4층지정석(홈팀)] 408구역 Q열-1"]';
+                const seat3 = 'img[title="[1루 4층지정석(홈팀)] 408구역 R열-2"]';
+                const seat4 = 'img[title="[1루 4층지정석(홈팀)] 408구역 R열-1"]';
+                await detailFrame.waitForSelector(seat1);
+                await detailFrame.click(seat1);
+                await detailFrame.waitForSelector(seat2);
+                await detailFrame.click(seat2);
+                await detailFrame.waitForSelector(seat3);
+                await detailFrame.click(seat3);
+                await detailFrame.waitForSelector(seat4);
+                await detailFrame.click(seat4);
+                await log.addLog("좌석선택 완료");
+                
+                // 좌석 선택 완료 버튼 클릭을 위해 다시 메인 프레임으로 돌아옴
+                await popupPage.bringToFront();
+                await frame.waitForSelector('#NextStepImage');
+                await frame.click('#NextStepImage');
+                await log.addLog("좌석 선택 완료 버튼 클릭 완료");
+            } catch (error) {
+                await log.addErrorLog("팝업 페이지 열기에 실패했습니다. 에러: " + error.message);
+            }
+        } else {
+            await log.addErrorLog("해당 날짜에 예매하기 버튼을 찾지 못했습니다.");
+            return;
+        }
+    } else {
+        await log.addErrorLog("해당 날짜를 찾지 못했습니다.");
+        return;
+    }
 
-    // const worker = await createWorker();
-    // (async () => {
-    //     await worker.loadLanguage('eng');
-    //     await worker.initialize('eng');
-    //     const { data: { text } } = await worker.recognize(imgUrl);
-    //     console.log('OCR :' + text);
-    //     await worker.terminate();
-    //   })();
-    return true;
+    sleep(5000);
 }
 
 function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
+
+// 특정 시간에 시작하도록 설정하는 함수
+async function scheduleStart(consertId, day, userId, pw, startTime) {
+    const browser = await puppeteer.launch({
+        headless: false,
+        args: ['--disable-web-security', '--disable-features=IsolateOrigins', '--disable-site-isolation-trials']
+    });
+
+    let page = await browser.newPage();
+    await log.addLog("브라우저와 페이지를 성공적으로 띄웠습니다.");
+
+    const now = new Date();
+    const targetTime = new Date(startTime);
+    let timeDifference = getTimeDifference(now, targetTime);
+
+    if (timeDifference <= 0) {
+        await log.addLog("지정된 시간이 이미 지났습니다. 티켓팅을 바로 시작합니다.");
+        await startTicketing(consertId, day, userId, pw, page);
+    } else {
+        // 남은 시간 카운트다운 로그
+        const interval = setInterval(() => {
+            timeDifference -= 1000;
+            if (timeDifference <= 0) {
+                clearInterval(interval);
+            } else {
+                const seconds = Math.floor((timeDifference / 1000) % 60);
+                const minutes = Math.floor((timeDifference / (1000 * 60)) % 60);
+                const hours = Math.floor((timeDifference / (1000 * 60 * 60)) % 24);
+                const days = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
+                log.addLog(`남은 시간: ${days}일 ${hours}시간 ${minutes}분 ${seconds}초`);
+            }
+        }, 1000);
+
+        setTimeout(async () => {
+            clearInterval(interval);
+            await startTicketing(consertId, day, userId, pw, page);
+        }, timeDifference);
+    }
+}
+
+// 현재 시간과 목표 시간의 차이를 밀리초 단위로 계산하는 함수
+function getTimeDifference(currentTime, targetTime) {
+    return targetTime - currentTime;
+}
+
+module.exports = { startTicketing, scheduleStart };

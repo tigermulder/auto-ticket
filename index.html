@@ -20,27 +20,23 @@
 </head>
 <body>
   <div class="ticketing">
-    <h1>I wanna go consert</h1>
+    <h1>롯데야구 예매하고싶어요</h1>
     <br><br>
     <div class="mb-3">
-      <label for="consertId" class="form-label">Consert ID</label>
-      <input id="consertId" class="form-control" type="text" placeholder="콘서트 ID" required="required"/>
-    </div>
-    <div class="mb-3">
-      <label for="numberPerson">numberPerson</label>
-      <input id="numberPerson" class="form-control" type="number" placeholder="몇개의 좌석을 원하시나요? (숫자만 입력)" required="required"/>
+      <label for="consertId" class="form-label">인터파크 ID</label>
+      <input id="consertId" class="form-control" type="text" placeholder="인터파크 ID" value="GoodsInfo?SportsCode=07001&TeamCode=PB003" required="required"/>
     </div>
     <div class="mb-3">
       <label for="day">day</label>
-      <input id="day" class="form-control" type="number" placeholder="원하시는 관람일 (예시 :4월 28일의 경우 28 입력)" required="required"/>
+      <input id="day" class="form-control" type="number" placeholder="원하시는 관람일 (예시 :6월 21일의 경우 0621 입력)" required="required"/>
     </div>
     <div class="mb-3">
       <label for="userId">User ID</label>
-      <input id="userId" class="form-control" type="text" placeholder="User ID" required="required"/>
+      <input id="userId" class="form-control" type="text" placeholder="User ID" value="jjongr1993" required="required"/>
     </div>
     <div class="mb-3">
       <label for="password">Password</label>
-      <input id="password" class="form-control" type="password" placeholder="Password" required="required"/>
+      <input id="password" class="form-control" type="password" placeholder="Password" value="Kjaysh1993!" required="required"/>
     </div>
     <br>
     <button id="ticketing" onclick="start()" class="btn btn-primary btn-block btn-large">
@@ -55,13 +51,13 @@
   <script>
     function start() {
       const consertId = document.getElementById('consertId').value;
-      const numberPerson = document.getElementById('numberPerson').value;
       const day = document.getElementById('day').value;
       const userId = document.getElementById('userId').value;
       const pw = document.getElementById('password').value;
-      
-      startTicketing(consertId, numberPerson, day, userId, pw);
+      // 예약스타트
+      scheduleStart(consertId, day, userId, pw, '2024-06-13T14:30:00');
     }
   </script>
 </body>
 </html>
+
